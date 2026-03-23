@@ -25,7 +25,7 @@ Some things I wanted it to be able to do:
 
 If we lived in 1960 (or even 2000) I could plug it into the wall and the project would be mostly done. But if I want to do anything interesting, I need to adapt it to VoIP. My initial thought was to hack up the inside of the phone and use a Raspberry Pi or ESP32 or something, but between driving 48V DC or replacing most of the internals it seemed a bit out of reach. Instead, I used the phone unmodified and connected it to a [Grandstream GS-HT802](https://www.grandstream.com/products/gateways-and-atas/analog-telephone-adaptors/product/ht802) which lists rotary support in the specs. This currently goes for ~$50 [on Amazon](https://www.amazon.com/Grandstream-GS-HT802-Analog-Telephone-Adapter/dp/B01JH7MYKA).
 
-To accomplish the other features, I wanted to use Asterisk, an open source PBX. Using Asterisk to make a phone that tells you jokes is a bit like using Kubernetes to host your blog, but I had a little bit of experience with it from ~20 years ago and it seemed to do everything I wanted. Ideally I would have been able to attach the Grandstream adapter directly to the machine running the Asterisk server. But for the equipment I had, I ended up attaching the Grandstream to the Raspberry Pi in my son's room, and having it bridge wifi to an old server under my desk running Asterisk. This hasn't flaked out yet but seems like it could be brittle. At some point I'd like to consolidate these into a more powerful Raspberry Pi 5 that runs Asterisk and is directly connected to the GrandStream.
+To accomplish the other features, I wanted to use Asterisk, an open source PBX. Using Asterisk to make a phone that tells you jokes is a bit like using Kubernetes to host your blog but it seemed to do everything I wanted. I purchased a Raspberry Pi 5 with 4gb of memory. I purchased a bundle from a local retailer which included an SD card, a case, power adapter, and a few other things. You can likely set this up on a lower-end or older version of a Raspberry Pi. 
 
 ![Diagram of equipment setup](./images/diagram.png)
 
@@ -46,7 +46,7 @@ After everything else checked out, I realized the ringer had been locked, and mo
 
 ## Raspberry Pi Setup
 
-I purchased a Raspberry Pi 5 with 4gb of memory. I purchased a bundle from a local retailer which included an SD card, a case, power adapter, and a few other things. You can likely set this up on a lower-end or older version of a Raspberry Pi. I installed Raspberry Pi OS using the imager provided on the [Raspberry PI website](https://www.raspberrypi.com/software/). 
+I installed Raspberry Pi OS using the imager provided on the [Raspberry PI website](https://www.raspberrypi.com/software/). 
 
 ## Asterisk setup
 
