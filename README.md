@@ -1,12 +1,10 @@
 # Rotary Phone Project
 
-![The phone in use](./images/header.jpg)
-
 This is an account of a project we recently did. The files aren't intended to constitute a cohesive runnable project, they're just a loose collection of scripts. It's mostly here to remind me how it works, but hopefully it's useful to others.
 
 ## Background
 
-Recently we went to the MoMA with my 4 year old son. Some modern art is hard to appreciate as a kid, but the exhibit he _loved_ was one where they had a bunch of rotary phones and you could [dial a number and it would read you a poem](https://www.moma.org/collection/works/294325). I wanted to replicate something like this at home.
+I was inspired by this [project](https://github.com/mnutt/rotary) and decided to follow their instructions in order to build a similar setup for my niece. I struggled to get incoming calls working for many months. My goal here is to provide consequential details that were ommitted from the original. 
 
 ## Features
 
@@ -14,9 +12,12 @@ Some things I wanted it to be able to do:
 
 * Dial out to a short list of family contacts. It's not something I think about much, but when I was a kid there was a phone on the wall and once I could reach it, I could use it. Now, if you're not old enough to have a cell phone, you also can't call anyone at all.
 * Allow incoming calls from that same list of family contacts. Requires an actual phone number.
-* On a different extension, hear a random joke.
-* ~~Hear a random k-pop song.~~ This was an easy thing to start with, but not actually that fun. The audio quality is pretty terrible for music.
-* Get NYC MTA train status. My son loves the subway, and is already pretty proficient at using a unix terminal to query the status of different trains, but it would be fun to hear an announcement too.
+
+### Features that differ from original
+
+* No MTA train status service
+* WiFi bridge with Raspberry Pi that provides phone location flexibility
+* Missed call email notifications
 
 ## Equipment
 
@@ -43,9 +44,13 @@ After everything else checked out, I realized the ringer had been locked, and mo
 
 ![Mute lever](./images/rotary_mute.jpg)
 
+## Raspberry Pi Setup
+
+I purchased a Raspberry Pi 5 with 4gb of memory. I purchased a bundle from a local retailer which included an SD card, a case, power adapter, and a few other things. You can likely set this up on a lower-end or older version of a Raspberry Pi. I installed Raspberry Pi OS using the imager provided on the [Raspberry PI website](https://www.raspberrypi.com/software/). 
+
 ## Asterisk setup
 
-I installed Asterisk via dpkg on Ubuntu 22. Setup was made a little more complicated by the RPi wifi bridge, which meant that the Grandstream was techically behind NAT from the perspective of Asterisk. Asterisk is trying to move from legacy `sip` module to `pjsip`, but I was only able to get `sip` to work so I stuck with that. The `/etc/asterisk/sip.conf` relevant parts:
+I installed Asterisk on Rasperry Pi OS using [these instructions](https://raspberrytips.com/install-asterisk-on-raspberry-pi/). Asterisk is trying to move from legacy `sip` module to `pjsip`, but I was only able to get `sip` to work so I stuck with that. The `/etc/asterisk/sip.conf` relevant parts:
 
 ```
 [rotary]
@@ -94,11 +99,17 @@ You can run `sudo asterisk -rvvvvv` to start the asterisk repl. Then:
 
 If you're not seeing any peers or any sip logs from asterisk, you can also use the Grandstream web UI and enable sip logging to hopefully see what is going on.
 
+
+## Using Raspberry Pi as a WiFi bridge
+
+This allows you to place your phone and Grandstream anywhere within WiFi range instead of having to plug the Grandstream to your router or access point via ethernet. But I recommend following the setup without the bridge first as it makes it much easier to debug, and only after you have both outgoing and incoming calls fully working, set up the WiFi bridge. Instructions coming soon. 
+
+
 ## Building Stuff in Asterisk
 
-At this point the phone is connecting to Asterisk and the real fun can begin. :)
+At this point the phone is connecting to Asterisk and the real fun can begin.
 
-### Play a K-Pop song
+### Play a song
 
 The easiest one first. Asterisk can play back an audio file, but is relatively limited in the types of files it can play. You'll likely need to convert your file to 8KHz wav. Then put something like this in `/etc/asterisk/extensions.conf`:
 
@@ -109,119 +120,13 @@ exten => 1234,1,Answer()
     same => n,Hangup()
 ```
 
-You can reload Asterisk config with (among others) `sudo systemctl reload asterisk`. This will let you dial 1,2,3,4 on the phone, answer, play the audio, and hang up on you.
-
-### Play MTA Subway Status
-
-### Speech Synthesis
-
-For this one, we need some sort of text-to-speech synthesis. TTS has come a _long_ way since Asterisk was initially created back in the early 2000s, so I opted for hooking in a third party TTS engine. I chose [piper](https://github.com/rhasspy/piper) which sounds pretty good and notably is fast--it can run on a Raspberry Pi.
-
-Piper can pipe to stdout, or a file or whatever. I was hoping I could shell out to piper with my text and _stream_ the result back to asterisk via stdout, but it was not meant to be. I went so far as to try to write a c Asterisk module that would accept raw audio over stdout, and eventually discovered that a) audio formats are hard, and b) I lack any sort of intuition about debugging when all I can get back are silence and a few popping noises.
-
-Instead I wound up writing an extension subroutine that calls out to piper, has it write to a tempfile, plays the tempfile, then deletes the tempfile. This means the entire speech generation has to complete before it can begin playing, but so far that has not taken longer than ~250ms on my Asterisk server. (a decade+ old core i7)
-
-The `speak.sh` bash script:
-
-```sh
-#!/bin/bash
-
-/path/to/piper/piper \
-    --length_scale=5 --sentence_silence=0.5 \
-    --model /path/to/piper/voices/en_US-amy-medium.onnx \
-    --output-raw -f - | \
-  sox -v 0.7 -t raw -e signed -r 22050 -b 16 - -r 8000 -b 16 -c 1 -t wav -
-```
-
-This uses the "Amy" medium-fidelity model to generate some speech, then `sox` to translate it to one of the few audio formats that Asterisk can play.
-
-Then we create the subroutine in `extensions.conf`:
-
-```
-[speak]
-exten => s,1,NoOp(Text to speech)
- same => n,Set(filename="speech-${RAND()}${RAND()}")
- same => n,System(echo "${ARG1}" | /path/to/speak.sh > /tmp/${filename}.wav)
- same => n,Playback(/tmp/${filename})
- same => n,System(rm -f /tmp/${filename}.wav)
- same => n,Return()
-```
-
-Then I can call it like this from a regular extension:
-
-```
-exten => 888,1,Answer() ; Say something
- same => n,GoSub(speak,s,1("Hello world"))
-```
-
-This works pretty well, but a very common pattern is that I want to play some audio for the dialer while at the same time accepting input from them. How maddening is it when you're trying to cancel Comcast and they're making you listen to all of the menu options because _they might have changed_? If we play audio, _then_ accept input, Asterisk blocks and we're no better than Comcast. Instead of `Playback()` we can use `Read()`, which accepts some audio and waits at the same time. We can make a separate subroutine for that:
-
-```
-[speak-get-digits]
-exten => s,1,NoOp(Text to speech requesting digits)
-    same => n,Set(filename="speech-${RAND()}${RAND()}")
-    same => n,Set(digitcount=${IF($["${ARG2}"=""]?1:${ARG2})})
-    same => n,System(echo "${ARG1}" | /path/to/rotary/speak.sh > /tmp/${filename}.wav)
-    same => n,Read(digits,/tmp/${filename},${digitcount})
-    same => n,System(rm -f /tmp/${filename}.wav)
-    same => n,Return(${digits})
-```
-
-Asterisk has a long lineage and unfortunately has some serious warts, one of them being return values. In order to call this you need to do:
-
-```
-same => n,GoSub(speak-get-digits,s,1("Dial a number to hear the status of a numbered train or dial 9 for a letter train.",1))
-same => n,Set(digit=${GOSUB_RETVAL})
-```
-
-`${GOSUB_RETVAL}` is a sort of environment variable set upon completion of your subroutine. I'd recommend immediately setting it to a different name like I've done above. The `1` we pass in as a second argument tells asterisk to only wait for one digit before proceeding.
-
-#### Talking to the MTA
-
-This part came from the pieces of the aforementioned unix terminal mta status project. It's a command line script that takes the number or letter of a train, fetches from the HTTP API the MTA website runs on, and returns the status in text form.
-
-What I discovered was that the response from the MTA was pretty good for viewing on a screen, but not quite suitable for text-to-speech. I had to modify the app to do a replacement pass, to change abbreviations where appropriate: Sq to Square, St to Street (but also St George to Saint George), etc. Then a secondary pass to correct mispronunciations. (Houston -> Howston, Coney Island -> Coaney Island etc) The last part probably varies a lot from one TTS engine to the next.
-
-#### Putting it together
-
-The numbered trains (1-7) were a piece of cake. Read a digit, phone user dials it on the rotary, pass it to the mta script, generate audio. Letters were quite a bit harder:
-
-* While there are only 9 numbers, you can achieve the letters by doing a proto-T9 implementation where the user dials "2" for "A", "22" for "B", etc.
-* But rotary phones and the subway share an interesting mid-century oddity that they just _skip_ various letters. Unfortunately these aren't the same letters. While the subway skips "I", "O", "P", etc, rotary phones skip "Q", and "Z". These are both actual subway lines so need to be mapped to something else.
-* The subway has 3 shuttle lines (Grand central, Franklin, Rockaways) and the Staten Island Railway; I just made "S" its own sub-menu with 4 options.
-
-Dial "33" to start the subway status tree:
-
-```
-exten => 33,1(start),Answer()
- same => n,GoSub(speak-get-digits,s,1("Dial a number to hear the status of a numbered train or dial 9 for a letter train.",1))
- same => n,Set(digit=${GOSUB_RETVAL})
- same => n,GotoIf($["${digit}" = "9"]?lettertrains)
- same => n,System(/path/to/rotary/mta.sh ${digit} > /tmp/piper.wav)
- same => n,Playback(/tmp/piper)
- same => n,Goto(start)
- same => n(lettertrains),NoOp(Status for letter trains)
- same => n,GoSub(speak-get-digits,s,1("Dial the letter for your train",4))
- same => n,Set(letters=${GOSUB_RETVAL})
- same => n,Gotoif($["${letters}" = "777"]?shuttle)
- same => n,System(/path/to/rotary/mta.sh letter:${letters} > /tmp/piper.wav)
- same => n,Playback(/tmp/piper)
- same => n,Goto(start)
- same => n(shuttle),NoOp(Status for shuttles)
- same => n,GoSub(speak-get-digits,s,1("Dial 1 for grand central shuttle, dial 2 for franklin avenue, dial 3 for far rockaway shuttle, dial 4 for staten island railway", 1))
- same => n,Set(digit=${GOSUB_RETVAL})
- same => n,System(/path/to/rotary/mta.sh shuttle:${digit} > /tmp/piper.wav)
- same => n,Playback(/tmp/piper)
- same => n,Goto(start)
-```
+You can reload Asterisk config with (among others) `sudo systemctl reload asterisk`. This will let you dial 1,2,3,4 on the phone, answer, play the audio, and hang up on you. One detail ommitted from the original writeup is that you have to place audio files in `/var/lib/asterisk/sounds/en/`, or at least I did in my setup.
 
 ### Phone Calls
 
 At this point many hours in, we're almost to the part you could have achieved 30 years ago by buying a phone and plugging it in to any house in America.
 
-In order for someone to use the phone to talk to another person with a regular phone, we need to connect to the phone network. Long ago it was apparently possible to use Google Voice, but from everything I've read it's no longer possible. I signed up for Twilio: not the cheapest, but it's reputable and developer-focused so pretty easy to work with.
-
-Buying a number will cost a few dollars a month. I let my son pick his own phone number. It has a lot of sevens in it.
+In order for someone to use the phone to talk to another person with a regular phone, we need to connect to the phone network. Long ago it was apparently possible to use Google Voice, but from everything I've read it's no longer possible. I signed up for Twilio: not the cheapest, but it's reputable and developer-focused so pretty easy to work with. Buying a number will cost a few dollars a month.
 
 Twilio offers two different services that seem like they could be relevant: I started out exploring "Twilio Elastic Sip Trunking" which "enables you to make & receive telephone calls from your IP communications infrastructure around the globe over a public or private connection" and sounds like exactly what I need. This is probably the "correct" way to bridge Asterisk into Twilio, especially if you're doing something real. But this approach assumes your Asterisk server has a public IP and mine sits behind my home router. Using this approach I was able to have Asterisk dial out, but Twilio could not make calls into Asterisk. NAT strikes again!
 
@@ -245,7 +150,7 @@ insecure=port,invite
 
 [twilio](twilio-trunk)
 host=replace-with-your-sip-name.sip.us1.twilio.com
-defaultuser=michael        ; username
+defaultuser=yourUserName        ; username
 remotesecret=totallysecure ; password
 defaultexpiry=605
 minexpiry=605
@@ -264,7 +169,7 @@ After you reload Asterisk, you can run `sudo asterisk -rvvvvv` and `show sip pee
 CLI> sip show peers
 Name/username             Host                                    Dyn Forcerport Comedia    ACL Port     Status      Description
 rotary/rotary             192.168.1.33                             D  Yes        Yes            5060     OK (22 ms)
-twilio/michael            54.172.60.0                                 Yes        No             5060     OK (18 ms)
+twilio/yourUserName       54.172.60.0                                 Yes        No             5060     OK (18 ms)
 ```
 
 #### Dialing out
@@ -340,20 +245,10 @@ exten => s,1,NoOp(Incoming Call)
  same => n,Hangup()
 ```
 
-This is where you could put other fancy logic, for instance if you wanted to let other people call you and hear MTA announcements or something.
+This is where you could put other fancy logic, for instance if you wanted to let other people call you and hear your songs or something.
 
 At this point you should be able to dial your Twilio number from your cell phone and, with a great deal of luck, your rotary phone will ring.
 
-### Tell a Joke
-
-This one needs the most future work. Conceptually it's mostly a simpler version of the MTA script: put list of jokes in an array, then choose one. This works okay, but somehow there is _absolutely no way_ to get piper to pause, which destroys the comedic timing.
-
-While I need to figure out how to get piper to just wait a bit, I also want to add support for knock-knock jokes, where it waits for the caller to actually say "who's there?". I don't think this needs to go nearly as far as actual speech-to-text, and could instead detect any kind of sound and probably be good enough.
-
-You also don't want a random joke: unless you have a really long list, you'll eventually end up with it telling the same joke twice in a row. This may be funny the first time, but gets old fast. Instead we need some way to tell a new joke each time.
-
 ## Conclusion
 
-The physical aspects of the project held my son's attention the best, especially taking the phone cover off. (make sure it's unplugged!) Debugging SIP connections was by far the most tedious part of the project and I did most of that at night. But building out the phone menu was also a fun activity where I let him dictate what the numbers did and we drew out how it would work.
-
-By far the best part of the project is that he'll randomly call up his grandparents to talk. As an adult I talk to loved ones on the phone, but calls tend to be scheduled and coordinated in advance via text. An unexpected call triggers annoyance or concern. Four year olds have none of that, and are happy just to chat.
+I built two of these setups, one for my niece, and one for myself. I love getting calls from my niece out of the blue, and I love seeing her excitement whenever she hears her phone ring.
