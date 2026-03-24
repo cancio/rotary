@@ -116,7 +116,7 @@ The easiest one first. Asterisk can play back an audio file, but is relatively l
 ```
 [rotary-context]
 exten => 1234,1,Answer()
-    same => n,Playback(/path/to/file.wav)
+    same => n,Playback(/path/to/file) ; Must be in /var/lib/asterisk/sounds/en/, do not specify file extension here
     same => n,Hangup()
 ```
 
@@ -138,9 +138,16 @@ The steps are:
 2. Create a Credential List. This is how Asterisk will authenticate with Twilio. Set up Voice Authentication with the Credential List.
 3. Enable SIP Registration.
 
-On the Asterisk side, we'll need something like this in our `/etc/asterisk/sip.conf`:
+On the Asterisk side, we'll need something like this in our `/etc/asterisk/sip.conf`, note that the order of these matters:
 
 ```
+[general]
+minexpiry=605
+defaultexpiry=605
+qualify=yes
+qualifyfreq=20
+register =>replace-with-your-sip-name:replace-with-your-sip-password@yourSipSubdomain.sip.us1.twilio.com
+
 [twilio-trunk](!)
 type=peer
 context=from-twilio ; Which dialplan to use for incoming calls
@@ -157,10 +164,10 @@ minexpiry=605
 qualify=yes
 ```
 
-Replace the host with the host from the SIP Domain you created in Twilio. And replace `defaultuser` and `remotesecret` values with the username and password from the Credentials List you created.
+Replace the host with the host from the SIP Domain you created in Twilio. And replace the username and password values with the username and password from the Credentials List you created.
 
 * `qualify=yes` will cause Asterisk to keep the NAT hole alive by periodically sending OPTIONS requests. 
-* `defaultexpiry` and `minexpiry` keep us from sending so many pings that Twilio rate-limits us. 
+* `defaultexpiry` and `minexpiry` keep us from sending so many pings that Twilio rate-limits us. I found that these have to be specified under `[general]` above all else
 * `context=from-twilio` means that incoming calls will wind up in the `from-twilio` context in `extensions.conf`, where you can route them to your rotary phone:
 
 After you reload Asterisk, you can run `sudo asterisk -rvvvvv` and `show sip peers` and see both your rotary phone as well as Twilio:
