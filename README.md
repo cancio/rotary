@@ -1,6 +1,6 @@
 # Rotary Phone Project
 
-This is an account of a project we recently did. The files aren't intended to constitute a cohesive runnable project, they're just a loose collection of scripts. It's mostly here to remind me how it works, but hopefully it's useful to others.
+This is an account of a project I recently did. The files aren't intended to constitute a cohesive runnable project, they're just a loose collection of scripts. It's mostly here to remind me how it works, but hopefully it's useful to others.
 
 ## Background
 
