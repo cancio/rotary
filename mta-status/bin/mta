@@ -1,3 +1,0 @@
-#!/home/michael/.volta/tools/image/node/18.19.0/bin/node
-
-require('../index.js');
